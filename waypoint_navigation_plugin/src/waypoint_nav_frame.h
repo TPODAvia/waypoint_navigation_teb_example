@@ -141,6 +141,7 @@ private:
   ros::Publisher reset_pub_;
   ros::Publisher start_journey_pub_;
   ros::Publisher path_loop_pub_;
+  ros::Publisher cancel_pub_;
 
   WaypointNavTool* wp_nav_tool_;
   //pointers passed via contructor

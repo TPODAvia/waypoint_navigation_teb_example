@@ -83,6 +83,7 @@ WaypointFrame::WaypointFrame(rviz::DisplayContext *context, std::map<int, Ogre::
   reset_pub_ = nh_.advertise<std_msgs::Empty>("/path_reset", 1);
   start_journey_pub_ = nh_.advertise<std_msgs::Empty>("/start_journey", 1);
   path_loop_pub_ = nh_.advertise<std_msgs::Bool>("path_loop", 1);
+  cancel_pub_ = nh_.advertise<actionlib_msgs::GoalID>("/move_base/cancel", 1);
 
   // Connect the new buttons to their slots
   connect(ui_->clear_last_button, SIGNAL(clicked()), this, SLOT(clearLastWaypoint()));
@@ -164,7 +165,6 @@ void WaypointFrame::clearLastWaypoint()
 void WaypointFrame::resetPath()
 {
   std_msgs::Empty path_reset;
-  // The message is empty as per the ROS command
   reset_pub_.publish(path_reset);
   ROS_INFO("Published reset path message to /path_reset");
 }
@@ -406,6 +406,14 @@ void WaypointFrame::clearAllWaypoints()
   //clear the interactive markers
   server_->clear();
   server_->applyChanges();
+
+  std_msgs::Empty path_reset;
+  reset_pub_.publish(path_reset);
+  ROS_INFO("Published reset path message to /path_reset");
+
+  actionlib_msgs::GoalID goal_cancel;
+  cancel_pub_.publish(goal_cancel);
+  ROS_INFO("Published cancel goal message to /move_base/cancel");
 }
 
 void WaypointFrame::heightChanged(double h)
