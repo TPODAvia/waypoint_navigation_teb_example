@@ -113,7 +113,7 @@ def path_loop_callback(msg):
 
 class FollowPath(State):
     def __init__(self):
-        State.__init__(self, outcomes=['success'])
+        State.__init__(self, outcomes=['success', 'shutdown'])
         self.frame_id = rospy.get_param('~goal_frame_id', 'map')
         self.odom_frame_id = rospy.get_param('~odom_frame_id', 'odom')
         self.base_frame_id = rospy.get_param('~base_frame_id', 'base_footprint')
@@ -147,18 +147,25 @@ class FollowPath(State):
             if not current_tolerance > 0.0:
                 self.client.wait_for_result()
                 rospy.loginfo("Waiting for %f sec..." % self.duration)
-                time.sleep(self.duration)
+                try:
+                    rospy.sleep(self.duration)
+                except rospy.ROSInterruptException:
+                    return 'shutdown'
             else:
                 distance = 10
-                while distance > current_tolerance:
+                while distance > current_tolerance and not rospy.is_shutdown():
                     if waypoints == []:
                         rospy.loginfo('The waypoint queue has been reset.')
                         return 'success'
                     now = rospy.Time.now()
-                    self.listener.waitForTransform(
-                        self.odom_frame_id, self.base_frame_id, now, rospy.Duration(4.0))
-                    trans, rot = self.listener.lookupTransform(
-                        self.odom_frame_id, self.base_frame_id, now)
+                    try:
+                        self.listener.waitForTransform(
+                            self.odom_frame_id, self.base_frame_id, now, rospy.Duration(4.0))
+                        trans, rot = self.listener.lookupTransform(
+                            self.odom_frame_id, self.base_frame_id, now)
+                    except (tf.Exception, tf.LookupException, tf.ConnectivityException):
+                        rospy.logerr("follow waypoint TF Exception")
+                        continue
                     distance = math.sqrt(
                         (waypoint.pose.pose.position.x - trans[0]) ** 2 +
                         (waypoint.pose.pose.position.y - trans[1]) ** 2)
@@ -167,24 +174,31 @@ class FollowPath(State):
 
 class GetPath(State):
     def __init__(self):
-        State.__init__(self, outcomes=['success'])
+        State.__init__(self, outcomes=['success', 'shutdown'])
 
     def execute(self, userdata):
         global path_save, start_journey_bool
         while not rospy.is_shutdown() and not path_save and not start_journey_bool:
-            rospy.sleep(1.0)
+            try:
+                rospy.sleep(1.0)
+            except rospy.ROSInterruptException:
+                return 'shutdown'
         return 'success'
 
 class PathComplete(State):
     def __init__(self):
-        State.__init__(self, outcomes=['success', 'loop'])
+        State.__init__(self, outcomes=['success', 'loop', 'shutdown'])
 
     def execute(self, userdata):
         global waypoints, path_save, start_journey_bool, poseArray_publisher, loop_requested
         rospy.loginfo('###############################')
         rospy.loginfo('##### REACHED FINISH GATE #####')
         rospy.loginfo('###############################')
-        rospy.sleep(5)
+        try:
+            rospy.sleep(5.0)
+        except rospy.ROSInterruptException:
+            return 'shutdown'
+        
         if loop_requested:
             rospy.loginfo('##### RETURN loop #####')
             return 'loop'
@@ -215,17 +229,17 @@ def main():
 
     with sm:
         StateMachine.add('GET_PATH', GetPath(),
-                         transitions={'success': 'FOLLOW_PATH'})
+                         transitions={'success': 'FOLLOW_PATH', 'shutdown': 'success'})
         StateMachine.add('FOLLOW_PATH', FollowPath(),
-                         transitions={'success': 'PATH_COMPLETE'})
+                         transitions={'success': 'PATH_COMPLETE', 'shutdown': 'success'})
         StateMachine.add('PATH_COMPLETE', PathComplete(),
-                         transitions={'success': 'GET_PATH', 'loop': 'FOLLOW_PATH'})
+                         transitions={'success': 'GET_PATH', 'loop': 'FOLLOW_PATH', 'shutdown': 'success'})
 
-    outcome = sm.execute()
-    rospy.spin()
-
-if __name__ == '__main__':
     try:
-        main()
-    except rospy.ROSInterruptException:
-        pass
+        outcome = sm.execute()
+        rospy.spin()
+    except Exception:
+        rospy.loginfo("Interrupted during sleep")
+    
+if __name__ == '__main__':
+    main()
